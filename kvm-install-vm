@@ -369,14 +369,6 @@ users:
       sudo: ALL=(ALL) NOPASSWD:ALL
       ssh-authorized-keys:
         - ${KEY}
-network:
-  version: 1
-  config:
-    - type: physical
-      name: eth1
-      subnets:
-         - type: dhcp
-
 # Configure where output will go
 output:
   all: ">> /var/log/cloud-init.log"
