@@ -404,9 +404,6 @@ ssh_authorized_keys:
 timezone: ${TIMEZONE}
 # Remove cloud-init when finished with it
 runcmd:
-  - sudo ip addr add 192.187.119.171/29 dev ens3
-  - sudo ip link set dev ens3 up
-  - sudo ip route add default via 192.187.119.169
   - ${NETRESTART}
   - ${PKGMGR} -y remove cloud-init
 _EOF_
