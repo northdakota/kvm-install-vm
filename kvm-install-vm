@@ -426,6 +426,8 @@ _EOF_
         NETWORK_PARAMS="bridge=${BRIDGE},model=virtio,mac=${MACADDRESS}"
     fi
 
+    NETWORK_PARAMS_TWO="bridge=br0,model=virtio,mac=${MACADDRESS}"
+
     echo "[$(date +%r)]----> Installing the domain and adjusting the configuration..."
     echo "[$(date +%r)]----> Installing with the following command:"
     echo "    virt-install \\"
@@ -451,6 +453,7 @@ _EOF_
         --disk ${DISK},format=qcow2,bus=virtio \
         --disk ${CI_ISO},device=cdrom \
         --network ${NETWORK_PARAMS} \
+        --network ${NETWORK_PARAMS_TWO} \
         --os-type=linux \
         --os-variant=${OS_VARIANT} \
         --graphics spice \
