@@ -376,17 +376,12 @@ network:
   version: 1
   config:
     - type: physical
-      name: eth0
+      name: ens3
       subnets:
          - type: static
            address: 192.187.119.171/29
            gateway: 192.187.119.169
-      
-    - type: physical
-      name: eth1
-      subnets:
          - type: dhcp
-    
     - type: nameserver:
       address:
         - 8.8.8.8
