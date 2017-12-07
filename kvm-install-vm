@@ -565,7 +565,7 @@ function create ()
             T   ) TIMEZONE="${OPTARG}" ;;
             e   ) EXTERNAL_IP="${OPTARG}" ;;
             g   ) EXTERNAL_GATEWAY="${OPTARG}" ;;
-            nm ) NETWORK_MASK_SHORT="${OPTARG}" ;;
+            nm  ) NETWORK_MASK_SHORT="${OPTARG}" ;;
             h|* ) usage; exit 1 ;;
         esac
     done
