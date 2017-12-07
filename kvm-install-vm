@@ -397,7 +397,6 @@ timezone: ${TIMEZONE}
 # Remove cloud-init when finished with it
 runcmd:
   - touch /etc/network/interfaces.d/60-static.cfg
-  - echo "$STATIC_IP_CONFIG" > /etc/network/interfaces.d/60-static.cfg
   - ${NETRESTART}
   - ${PKGMGR} -y remove cloud-init
 _EOF_
