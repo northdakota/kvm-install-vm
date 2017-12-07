@@ -380,28 +380,6 @@ ssh_authorized_keys:
   - ${KEY}
 timezone: ${TIMEZONE}
 
-network:
-  version: 1
-  config:
-    - type: physical
-      name: eth0
-      subnets:
-         - type: static
-           address: 192.187.119.171/29
-           gateway: 192.187.119.169
-
-    - type: physical
-      name: eth1
-      subnets:
-         - type: dhcp
-
-    - type: nameserver:
-      address:
-        - 8.8.8.8
-        - 8.8.4.4
-      search:
-        - exemplary
-
 # Remove cloud-init when finished with it
 runcmd:
   - ${NETRESTART}
@@ -541,7 +519,7 @@ function set_defaults ()
     RESIZE_DISK=false               # Resize disk (boolean)
     IMAGEDIR=${HOME}/virt/images    # Directory to store images
     BRIDGE=virbr0                   # Hypervisor bridge
-    PUBKEY=/home/northdakota/.ssh/id_rsa.pub  # SSH public key
+    PUBKEY=${HOME}/.ssh/id_rsa.pub  # SSH public key
     DISTRO=centos7                  # Distribution
     MACADDRESS=                     # MAC Address
     TIMEZONE=US/Eastern             # Timezone
