@@ -356,12 +356,10 @@ function create_vm ()
     # and add ssh-key
     cat > $USER_DATA << _EOF_
 #cloud-config
-
 # Hostname management
 preserve_hostname: False
 hostname: ${VMNAME}
 fqdn: ${VMNAME}.${DNSDOMAIN}
-
 # Users
 users:
     - default
@@ -371,7 +369,6 @@ users:
       sudo: ALL=(ALL) NOPASSWD:ALL
       ssh-authorized-keys:
         - ${KEY}
-
 network:
   version: 1
   config:
@@ -388,23 +385,21 @@ network:
         - 8.8.4.4
       search:
         - exemplary
-
 # Configure where output will go
 output:
   all: ">> /var/log/cloud-init.log"
-
 # configure interaction with ssh server
 ssh_genkeytypes: ['ed25519', 'rsa']
-
 # Install my public ssh key to the first user-defined user configured
 # in cloud.cfg in the template (which is centos for CentOS cloud images)
 ssh_authorized_keys:
   - ${KEY}
-
 timezone: ${TIMEZONE}
-
 # Remove cloud-init when finished with it
 runcmd:
+  - sudo ip addr add 192.187.119.171/29 dev ens3
+  - sudo ip link set dev ens3 up
+  - sudo ip route add default via 192.187.119.169
   - ${NETRESTART}
   - ${PKGMGR} -y remove cloud-init
 _EOF_
