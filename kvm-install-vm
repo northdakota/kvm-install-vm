@@ -473,6 +473,7 @@ _EOF_
         --disk ${DISK},format=qcow2,bus=virtio \
         --disk ${CI_ISO},device=cdrom \
         --network ${NETWORK_PARAMS} \
+        --network ${NETWORK_PARAMS_TWO} \
         --os-type=linux \
         --os-variant=${OS_VARIANT} \
         --graphics spice \
