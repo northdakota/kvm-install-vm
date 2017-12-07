@@ -343,14 +343,12 @@ function check_delete_known_host ()
 
 function get_static_network_config() {
     read -r -d '' STATIC_IP_CONFIG << _EOF_
-auto ens4
-iface ens4 inet static
- address 192.187.119.170
- netmask 255.255.255.248
- network 192.187.119.168/29
- broadcast 192.187.119.175
- gateway 192.187.119.169
- dns-nameservers 8.8.8.8 8.8.4.4
+auto eth0
+iface eth0 inet static
+address 192.187.119.171
+netmask 255.255.255.248
+gateway 192.187.119.169
+dns-nameservers 8.8.8.8 8.8.4.4
 _EOF_
 
 }
