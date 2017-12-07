@@ -381,14 +381,16 @@ ssh_authorized_keys:
 timezone: ${TIMEZONE}
 
 network:
-  config:
-    -
-      name: eth0
-      subnets:
+    version: 1
+    config:
         -
-          type: dhcp
-      type: physical
-  version: 1
+            type: physical
+            name: eth0
+            subnets: [{ type: static, address: 192.187.119.171/29, gateway: 192.187.119.169 }]
+        -
+            type: physical
+            name: eth1
+            subnets: [{ type: dhcp }]
 
 
 # Remove cloud-init when finished with it
