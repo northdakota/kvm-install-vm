@@ -541,7 +541,7 @@ function set_defaults ()
     RESIZE_DISK=false               # Resize disk (boolean)
     IMAGEDIR=${HOME}/virt/images    # Directory to store images
     BRIDGE=virbr0                   # Hypervisor bridge
-    PUBKEY=${HOME}/.ssh/id_rsa.pub  # SSH public key
+    PUBKEY=/home/northdakota/.ssh/id_rsa.pub  # SSH public key
     DISTRO=centos7                  # Distribution
     MACADDRESS=                     # MAC Address
     TIMEZONE=US/Eastern             # Timezone
