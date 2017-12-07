@@ -341,18 +341,6 @@ function check_delete_known_host ()
         || echo "[$(date +%r)]----> No entries found for ${IP}..."
 }
 
-function get_static_network_config() {
-    read -r -d '' STATIC_IP_CONFIG << _EOF_
-auto eth0
-iface eth0 inet static
-address 192.187.119.171
-netmask 255.255.255.248
-gateway 192.187.119.169
-dns-nameservers 8.8.8.8 8.8.4.4
-_EOF_
-
-}
-
 function create_vm ()
 {
     # Start clean
@@ -394,7 +382,7 @@ timezone: ${TIMEZONE}
 
 # Remove cloud-init when finished with it
 runcmd:
-  - touch /etc/network/interfaces.d/60-static.cfg
+  - ip address add 192.187.119.171/29 dev ens3
   - ${NETRESTART}
   - ${PKGMGR} -y remove cloud-init
 _EOF_
@@ -620,9 +608,6 @@ function create ()
 
     # Set package manager
     get_pkg_mgr
-
-    # get config for static network
-    get_static_network_config
 
     # Finally, create requested VM
     create_vm
