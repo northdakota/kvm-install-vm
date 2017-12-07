@@ -59,7 +59,7 @@ OPTIONS
     -T          Timezone            (default: US/Eastern)
     -e          External Ip         (default: none)
     -g          External Gateway    (default: none)
-    -s          External Gateway Mask
+    -a          External Gateway Mask
 
 DISTRIBUTIONS
     NAME            DESCRIPTION                         LOGIN
@@ -540,7 +540,7 @@ function create ()
     set_defaults
 
     # Parse command line arguments
-    while getopts ":b:c:d:D:f:i:k:l:m:M:t:T:h:egs" opt
+    while getopts ":b:c:d:D:f:i:k:l:m:M:t:T:h:e:g:a" opt
     do
         case "$opt" in
             b   ) BRIDGE="${OPTARG}" ;;
@@ -564,7 +564,7 @@ function create ()
             T   ) TIMEZONE="${OPTARG}" ;;
             e   ) EXTERNAL_IP="${OPTARG}" ;;
             g   ) EXTERNAL_GATEWAY="${OPTARG}" ;;
-            s   ) NETWORK_MASK_SHORT="${OPTARG}" ;;
+            a   ) NETWORK_MASK_SHORT="${OPTARG}" ;;
             h|* ) usage; exit 1 ;;
         esac
     done
