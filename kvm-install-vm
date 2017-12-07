@@ -569,7 +569,7 @@ function create ()
         esac
     done
 
-    shift $((OPTIND - 1))
+    shift $((OPTIND))
 
     if [ "$#" != 1 ]
     then
