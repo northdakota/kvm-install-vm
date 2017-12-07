@@ -456,6 +456,7 @@ _EOF_
     echo "      --disk ${DISK},format=qcow2,bus=virtio \\"
     echo "      --disk ${CI_ISO},device=cdrom \\"
     echo "      --network ${NETWORK_PARAMS} \\"
+    echo "      --network ${NETWORK_PARAMS_TWO} \\"
     echo "      --os-type=linux \\"
     echo "      --os-variant=${OS_VARIANT} \\"
     echo "      --graphics spice \\"
