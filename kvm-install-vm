@@ -372,6 +372,28 @@ users:
       ssh-authorized-keys:
         - ${KEY}
 
+network:
+  version: 1
+  config:
+    - type: physical
+      name: eth0
+      subnets:
+         - type: static
+           address: 192.187.119.171/29
+           gateway: 192.187.119.169
+      
+    - type: physical
+      name: eth1
+      subnets:
+         - type: dhcp
+    
+    - type: nameserver:
+      address:
+        - 8.8.8.8
+        - 8.8.4.4
+      search:
+        - exemplary
+
 # Configure where output will go
 output:
   all: ">> /var/log/cloud-init.log"
