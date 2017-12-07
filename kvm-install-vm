@@ -57,6 +57,10 @@ OPTIONS
     -M mac      Mac address         (default: auto-assigned)
     -t          Linux Distribution  (default: centos7)
     -T          Timezone            (default: US/Eastern)
+    -e          External Ip         (default: none)
+    -g          External Gateway    (default: none)
+    -nm         External Gateway Mask
+    -nms        External Gateway Mask short
 
 DISTRIBUTIONS
     NAME            DESCRIPTION                         LOGIN
@@ -382,7 +386,9 @@ timezone: ${TIMEZONE}
 
 # Remove cloud-init when finished with it
 runcmd:
-  - ip address add 192.187.119.171/29 dev ens3
+  - ip address add ${EXTERNAL_IP}/${NETWORK_MASK_SHORT} dev ens4
+  - ip link set dev ens4 up
+  - ip route change default via ${EXTERNAL_GATEWAY} dev ens4
   - ${NETRESTART}
   - ${PKGMGR} -y remove cloud-init
 _EOF_
@@ -557,6 +563,9 @@ function create ()
             M   ) MACADDRESS="${OPTARG}" ;;
             t   ) DISTRO="${OPTARG}" ;;
             T   ) TIMEZONE="${OPTARG}" ;;
+            e   ) EXTERNAL_IP="${OPTARG}" ;;
+            g   ) EXTERNAL_GATEWAY="${OPTARG}" ;;
+            nm ) NETWORK_MASK_SHORT="${OPTARG}" ;;
             h|* ) usage; exit 1 ;;
         esac
     done
