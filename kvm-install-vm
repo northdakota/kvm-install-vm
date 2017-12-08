@@ -395,7 +395,6 @@ runcmd:
   - route del default
   - ip route add default via ${EXTERNAL_GATEWAY} dev ens4
   - ${NETRESTART}
-  - ${PKGMGR} -y remove cloud-init
 _EOF_
 
     { echo "instance-id: ${VMNAME}"; echo "local-hostname: ${VMNAME}"; } > $META_DATA
