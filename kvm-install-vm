@@ -390,9 +390,11 @@ runcmd:
   - echo "  address ${EXTERNAL_IP}"  >> /etc/network/interfaces.d/static.cfg
   - echo "  gateway ${EXTERNAL_GATEWAY}"  >> /etc/network/interfaces.d/static.cfg
   - echo "  netmask ${NETWORK_MASK}"  >> /etc/network/interfaces.d/static.cfg
+  - ip link set dev ens3 down
   - route del default
   - ip route add default via ${EXTERNAL_GATEWAY} dev ens4
   - ip link set dev ens4 up
+  - ip link set dev ens3 up
   - ${NETRESTART}
   - ${PKGMGR} -y remove cloud-init
 _EOF_
