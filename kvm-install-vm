@@ -401,7 +401,6 @@ runcmd:
   - echo "  up route add default gw ${EXTERNAL_GATEWAY} metric 10"  >> /etc/network/interfaces.d/10-static.cfg
   - ip link set dev ens4 up
   - route del default
-  - ifconfig ens4 ${EXTERNAL_IP} netmask ${NETWORK_MASK}
   - ip route add default via ${EXTERNAL_GATEWAY} dev ens4
   - ${NETRESTART}
 _EOF_
