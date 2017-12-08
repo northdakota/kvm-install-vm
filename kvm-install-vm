@@ -385,11 +385,12 @@ timezone: ${TIMEZONE}
 
 # Remove cloud-init when finished with it
 runcmd:
-  - echo "auto ens4" >> /etc/network/interfaces.d/static.cfg
-  - echo "iface ens4 inet static"  >> /etc/network/interfaces.d/static.cfg
-  - echo "  address ${EXTERNAL_IP}"  >> /etc/network/interfaces.d/static.cfg
-  - echo "  gateway ${EXTERNAL_GATEWAY}"  >> /etc/network/interfaces.d/static.cfg
-  - echo "  netmask ${NETWORK_MASK}"  >> /etc/network/interfaces.d/static.cfg
+  - echo "auto ens4" >> /etc/network/interfaces.d/10-static.cfg
+  - echo "iface ens4 inet static"  >> /etc/network/interfaces.d/10-static.cfg
+  - echo "  address ${EXTERNAL_IP}"  >> /etc/network/interfaces.d/10-static.cfg
+  - echo "  gateway ${EXTERNAL_GATEWAY}"  >> /etc/network/interfaces.d/10-static.cfg
+  - echo "  netmask ${NETWORK_MASK}"  >> /etc/network/interfaces.d/10-static.cfg
+  - echo "  up route add default gw ${EXTERNAL_GATEWAY} metric 10"  >> /etc/network/interfaces.d/10-static.cfg
   - ip link set dev ens4 up
   - route del default
   - ip route add default via ${EXTERNAL_GATEWAY} dev ens4
