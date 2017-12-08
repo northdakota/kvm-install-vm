@@ -392,6 +392,7 @@ timezone: ${TIMEZONE}
 
 # Remove cloud-init when finished with it
 runcmd:
+  - ip link set dev ens4 down
   - rm /etc/network/interfaces.d/10-static.cfg
   - echo "auto ens4" >> /etc/network/interfaces.d/10-static.cfg
   - echo "iface ens4 inet static"  >> /etc/network/interfaces.d/10-static.cfg
