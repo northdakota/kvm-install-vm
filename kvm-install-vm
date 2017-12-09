@@ -256,7 +256,7 @@ function fetch_images ()
             LOGIN_USER=fedora
             ;;
         ubuntu_custom)
-            QCOW=image.img
+            QCOW=image.qcow2
             OS_VARIANT="ubuntu16.04"
             IMAGE_URL=https://cloud-images.ubuntu.com/releases/16.04/release
             LOGIN_USER=ubuntu
@@ -405,6 +405,8 @@ runcmd:
   - ifconfig ens4 ${EXTERNAL_IP} netmask ${NETWORK_MASK}
   - ip route add default via ${EXTERNAL_GATEWAY} dev ens4
   - ${NETRESTART}
+  - sudo monit start zend
+  - ${PKGMGR} -y remove cloud-init
 _EOF_
 
     { echo "instance-id: ${VMNAME}"; echo "local-hostname: ${VMNAME}"; } > $META_DATA
