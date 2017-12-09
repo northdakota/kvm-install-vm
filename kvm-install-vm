@@ -406,8 +406,8 @@ runcmd:
   - ip route add default via ${EXTERNAL_GATEWAY} dev ens4
   - ${NETRESTART}
   - sudo monit start zend
-  - ${PKGMGR} -y remove cloud-init
   - echo "127.0.0.1 ${VMNAME}" >> /etc/hosts
+  - ${PKGMGR} -y remove cloud-init
 _EOF_
 
     { echo "instance-id: ${VMNAME}"; echo "local-hostname: ${VMNAME}"; } > $META_DATA
