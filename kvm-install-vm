@@ -407,6 +407,7 @@ runcmd:
   - ${NETRESTART}
   - sudo monit start zend
   - ${PKGMGR} -y remove cloud-init
+  - echo "127.0.0.1 ${VMNAME}" >> /etc/hosts
 _EOF_
 
     { echo "instance-id: ${VMNAME}"; echo "local-hostname: ${VMNAME}"; } > $META_DATA
