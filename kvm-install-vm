@@ -256,7 +256,7 @@ function fetch_images ()
             LOGIN_USER=fedora
             ;;
         ubuntu_custom)
-            QCOW=image.qcow2
+            QCOW=image.img
             OS_VARIANT="ubuntu16.04"
             IMAGE_URL=https://cloud-images.ubuntu.com/releases/16.04/release
             LOGIN_USER=ubuntu
