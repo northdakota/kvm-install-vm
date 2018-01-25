@@ -1,0 +1,741 @@
+#!/bin/bash
+
+# Set program name variable - basename without subshell
+prog=${0##*/}
+
+function usage ()
+{
+    cat << EOF
+NAME
+    kvm-install-vm - Install virtual guests using cloud-init on a local KVM
+    hypervisor.
+
+SYNOPSIS
+    $prog COMMAND [OPTIONS]
+
+DESCRIPTION
+    A bash wrapper around virt-install to build virtual machines on a local KVM
+    hypervisor. You can run it as a normal user which will use qemu:///session
+    to connect locally to your KVM domains.
+
+COMMANDS
+    help        - show this help or help for a subcommand
+    attach-disk - create and attach a disk device to guest domain
+    create      - create a new guest domain
+    detach-disk - detach a disk device from a guest domain
+    list        - list all domains, running and stopped
+    remove      - delete a guest domain
+
+EOF
+}
+
+function usage_subcommand ()
+{
+    case "$1" in
+        create)
+            cat << EOF
+NAME
+    $prog create [COMMANDS] [OPTIONS] VMNAME
+
+DESCRIPTION
+    Create a new guest domain.
+
+COMMANDS
+    help - show this help
+
+OPTIONS
+    -b          Bridge              (default: virbr0)
+    -c          Number of vCPUs     (default: 1)
+    -d          Disk Size (GB)      (default: 10)
+    -D          DNS Domain          (default: example.local)
+    -f          CPU Model / Feature (default: host)
+    -h          Display help
+    -i          Custom QCOW2 Image
+    -k          SSH Public Key      (default: $HOME/.ssh/id_rsa.pub)
+    -l          Location of Images  (default: $HOME/virt/images)
+    -m          Memory Size (MB)    (default: 1024)
+    -M mac      Mac address         (default: auto-assigned)
+    -t          Linux Distribution  (default: centos7)
+    -T          Timezone            (default: US/Eastern)
+    -e          External Ip         (default: none)
+    -g          External Gateway    (default: none)
+    -a          External Gateway Mask
+
+DISTRIBUTIONS
+    NAME            DESCRIPTION                         LOGIN
+    centos7         CentOS 7                            centos
+    centos7-atomic  CentOS 7 Atomic Host                centos
+    centos6         CentOS 6                            centos
+    debian9         Debian 9 (Stretch)                  debian
+    fedora26        Fedora 26                           fedora
+    fedora26-atomic Fedora 26 Atomic Host               fedora
+    ubuntu1604      Ubuntu 16.04 LTS (Xenial Xerus)     ubuntu
+    ubuntu_custom   Ubuntu 16.04 LTS (Xenial Xerus)     ubuntu
+
+EXAMPLES
+    $prog create foo
+        Create VM with the default parameters: CentOS 7, 1 vCPU, 1GB RAM, 10GB
+        disk capacity.
+
+    $prog create -c 2 -m 2048 -d 20 foo
+        Create VM with custom parameters: 2 vCPUs, 2GB RAM, and 20GB disk
+        capacity.
+
+    $prog create -t debian9 foo
+        Create a Debian 9 VM with the default parameters.
+
+    $prog create -T UTC foo
+        Create a default VM with UTC timezone.
+
+EOF
+            ;;
+        remove)
+            cat << EOF
+NAME
+    $prog remove [COMMANDS] VMNAME
+
+DESCRIPTION
+    Destroys (stops) and undefines a guest domain.  This also remove the
+    associated storage pool.
+
+COMMANDS
+    help - show this help
+
+EXAMPLE
+    $prog remove foo
+        Remove (destroy and undefine) a guest domain.  WARNING: This will
+        delete the guest domain and any changes made inside it!
+EOF
+            ;;
+        attach-disk)
+            cat << EOF
+NAME
+    $prog attach-disk [OPTIONS] [COMMANDS] VMNAME
+
+DESCRIPTION
+    Destroys (stops) and undefines a guest domain.  This also remove the
+    associated storage pool.
+
+COMMANDS
+    help - show this help
+
+OPTIONS
+    -d SIZE     Disk size (GB)
+    -f FORMAT   Disk image format       (default: qcow2)
+    -s IMAGE    Source of disk device
+    -t TARGET   Disk device target
+
+EXAMPLE
+    $prog attach-disk -d 10 -s example-5g.qcow2 -t vdb foo
+        Attach a 10GB disk device named example-5g.qcow2 to the foo guest
+        domain.
+EOF
+            ;;
+        list)
+            cat << EOF
+NAME
+    $prog list
+
+DESCRIPTION
+    Lists all running and stopped guest domains.
+EOF
+            ;;
+        *)
+            printf "'$subcommand' is not a valid subcommand.\n"
+            exit 1
+            ;;
+    esac
+}
+
+# Console output colors
+bold() { echo -e "\e[1m$@\e[0m" ; }
+red() { echo -e "\e[31m$@\e[0m" ; }
+green() { echo -e "\e[32m$@\e[0m" ; }
+
+die() { red "ERR: $@" >&2 ; exit 2 ; }
+silent() { "$@" > /dev/null 2>&1 ; }
+has_bin() { silent which $1 ; }
+title() { bold "$@" ; }
+par() { echo -e "- $@" ; }
+parn() { echo -en "- $@ ... " ; }
+ok() { green "${@:-OK}" ; }
+
+pushd() { command pushd "$@" >/dev/null ; }
+popd() { command popd "$@" >/dev/null ; }
+
+# Detect OS and set wget parameters
+function set_wget ()
+{
+    if [ -f /etc/fedora-release ]
+    then
+        WGET="wget --quiet --show-progress"
+    else
+        WGET="wget"
+    fi
+}
+
+function delete_vm ()
+{
+    VM=$1
+
+    # Set defaults to get IMAGEDIR
+    set_defaults
+
+    if [ "${DOMAIN_EXISTS}" -eq 1 ]
+    then
+        echo "[$(date +%r)]----> Destroying ${VM} domain..."
+        virsh destroy ${VM} > /dev/null 2>&1
+
+        echo "[$(date +%r)]----> Undefining ${VM} domain..."
+        virsh undefine ${VM} > /dev/null 2>&1
+
+        [ -d "$IMAGEDIR/$VM" ] \
+            && echo "[$(date +%r)]----> Deleting ${VM} files..." \
+            && rm -rf $IMAGEDIR/$VM
+    else
+        echo "[$(date +%r)]----> Domain ${VM} does not exist..."
+    fi
+
+    if [ "${STORPOOL_EXISTS}" -eq 1 ]
+    then
+        echo "[$(date +%r)]----> Destroying ${VM} storage pool..."
+        virsh pool-destroy ${VM} > /dev/null 2>&1
+    else
+        echo "[$(date +%r)]----> Storage pool ${VM} does not exist..."
+    fi
+}
+
+function fetch_images ()
+{
+    # Create image directory if it doesn't already exist
+    mkdir -p ${IMAGEDIR}
+
+    # Set variables based on $DISTRO
+    case "$DISTRO" in
+        centos7)
+            QCOW=CentOS-7-x86_64-GenericCloud.qcow2
+            OS_VARIANT="centos7.0"
+            IMAGE_URL=https://cloud.centos.org/centos/7/images
+            LOGIN_USER=centos
+            ;;
+        centos7-atomic)
+            QCOW=CentOS-Atomic-Host-7-GenericCloud.qcow2
+            OS_VARIANT="centos7.0"
+            IMAGE_URL=http://cloud.centos.org/centos/7/atomic/images
+            LOGIN_USER=centos
+            ;;
+        centos6)
+            QCOW=CentOS-6-x86_64-GenericCloud.qcow2
+            OS_VARIANT="centos6.9"
+            IMAGE_URL=https://cloud.centos.org/centos/6/images
+            LOGIN_USER=centos
+            ;;
+        debian8)
+            # FIXME: Not yet working.
+            QCOW=debian-8-openstack-amd64.qcow2
+            OS_VARIANT="debian8"
+            IMAGE_URL=https://cdimage.debian.org/cdimage/openstack/current-8
+            LOGIN_USER=debian
+            ;;
+        debian9)
+            QCOW=debian-9-openstack-amd64.qcow2
+            OS_VARIANT="debian9"
+            IMAGE_URL=https://cdimage.debian.org/cdimage/openstack/current-9
+            LOGIN_USER=debian
+            ;;
+        fedora26)
+            QCOW=Fedora-Cloud-Base-26-1.5.x86_64.qcow2
+            OS_VARIANT="fedora26"
+            IMAGE_URL=https://download.fedoraproject.org/pub/fedora/linux/releases/26/CloudImages/x86_64/images
+            LOGIN_USER=fedora
+            ;;
+        fedora26-atomic)
+            QCOW=Fedora-Atomic-26-20171003.0.x86_64.qcow2
+            OS_VARIANT="fedora26"
+            IMAGE_URL=https://download.fedoraproject.org/pub/alt/atomic/stable/Fedora-Atomic-26-20171003.0/CloudImages/x86_64/images
+            LOGIN_USER=fedora
+            ;;
+        ubuntu_custom)
+            QCOW=image.img
+            OS_VARIANT="ubuntu16.04"
+            IMAGE_URL=https://cloud-images.ubuntu.com/releases/16.04/release
+            LOGIN_USER=ubuntu
+            ;;
+        ubuntu1604)
+            QCOW=ubuntu-16.04-server-cloudimg-amd64-disk1.img
+            OS_VARIANT="ubuntu16.04"
+            IMAGE_URL=https://cloud-images.ubuntu.com/releases/16.04/release
+            LOGIN_USER=ubuntu
+            ;;
+        *)
+            usage
+            exit 2
+            ;;
+    esac
+
+    IMAGE=${IMAGEDIR}/${QCOW}
+
+    if [ ! -f ${IMAGEDIR}/${QCOW} ]
+    then
+        echo "[$(date +%r)]----> Cloud image not found.  Downloading..."
+        set_wget
+        ${WGET} --directory-prefix ${IMAGEDIR} ${IMAGE_URL}/${QCOW}
+    fi
+
+}
+
+function check_ssh_key ()
+{
+    if [ ! -f "${PUBKEY}" ]
+    then
+        # Check for existence of a pubkey, or else exit with message
+        echo "[$(date +%r)]----> [ERROR] Please generate an SSH keypair using 'ssh-keygen -t rsa' or specify one with the "-k" flag."
+        exit 3
+    else
+        # Place contents of $PUBKEY into $KEY
+        KEY=$(<${PUBKEY})
+    fi
+}
+
+function domain_exists ()
+{
+    virsh dominfo "${1}" > /dev/null 2>&1 \
+        && DOMAIN_EXISTS=1 \
+        || DOMAIN_EXISTS=0
+}
+
+function storpool_exists ()
+{
+    virsh pool-info "${1}" > /dev/null 2>&1 \
+        && STORPOOL_EXISTS=1 \
+        || STORPOOL_EXISTS=0
+}
+
+function get_pkg_mgr ()
+{
+    case "${DISTRO}" in
+        centos? )
+            PKGMGR="yum"
+            SUDOGROUP="wheel"
+            ;;
+        fedora?? )
+            PKGMGR="dnf"
+            SUDOGROUP="wheel"
+            ;;
+        ubuntu*|debian? )
+            PKGMGR="apt-get"
+            SUDOGROUP="sudo"
+            ;;
+        *)
+            echo "OS not supported."
+            exit 2
+            ;;
+    esac
+}
+
+function set_network_restart_cmd ()
+{
+    case "${DISTRO}" in
+        centos6 )           NETRESTART="service network stop && service network start" ;;
+        ubuntu*|debian?)    NETRESTART="systemctl stop networking && systemctl start networking" ;;
+        *)                  NETRESTART="systemctl stop network && systemctl start network" ;;
+    esac
+}
+
+function check_delete_known_host ()
+{
+    echo "[$(date +%r)]----> Checking for ${IP} in known_hosts file..."
+    grep -q ${IP} ${HOME}/.ssh/known_hosts \
+        && echo "[$(date +%r)]----> Found entry for ${IP}. Removing..." \
+        && sed --in-place "/^${IP}/d" ~/.ssh/known_hosts \
+        || echo "[$(date +%r)]----> No entries found for ${IP}..."
+}
+
+function create_vm ()
+{
+    # Start clean
+    [ -d "${IMAGEDIR}/${VMNAME}" ] && rm -rf ${IMAGEDIR}/${VMNAME}
+    mkdir -p ${IMAGEDIR}/${VMNAME}
+
+    pushd ${IMAGEDIR}/${VMNAME}
+
+    # Create log file
+    touch ${VMNAME}.log
+
+    # cloud-init config: set hostname, remove cloud-init package,
+    # and add ssh-key
+    cat > $USER_DATA << _EOF_
+#cloud-config
+# Hostname management
+preserve_hostname: False
+hostname: ${VMNAME}
+fqdn: ${VMNAME}.${DNSDOMAIN}
+# Users
+users:
+    - default
+    - name: ${USER}
+      groups: ['${SUDOGROUP}']
+      shell: /bin/bash
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      ssh-authorized-keys:
+        - ${KEY}
+# Configure where output will go
+output:
+  all: ">> /var/log/cloud-init.log"
+# configure interaction with ssh server
+ssh_genkeytypes: ['ed25519', 'rsa']
+# Install my public ssh key to the first user-defined user configured
+# in cloud.cfg in the template (which is centos for CentOS cloud images)
+ssh_authorized_keys:
+  - ${KEY}
+timezone: ${TIMEZONE}
+
+# Remove cloud-init when finished with it
+runcmd:
+  - ip link set dev ens4 down
+  - rm /etc/network/interfaces.d/10-static.cfg
+  - echo "auto ens4" >> /etc/network/interfaces.d/10-static.cfg
+  - echo "iface ens4 inet6 auto"  >> /etc/network/interfaces.d/10-static.cfg
+  - echo "  dns-nameservers 2001:4860:4860:0:0:0:0:8888"  >> /etc/network/interfaces.d/10-static.cfg
+  - ip link set dev ens4 up
+  - ${NETRESTART}
+  - sudo monit start zend
+  - echo "127.0.0.1 ${VMNAME}" >> /etc/hosts
+  - ${PKGMGR} -y remove cloud-init
+_EOF_
+
+    { echo "instance-id: ${VMNAME}"; echo "local-hostname: ${VMNAME}"; } > $META_DATA
+
+    echo "[$(date +%r)]----> Copying cloud image ($(basename ${IMAGE}))..."
+    DISK=${VMNAME}.qcow2
+    cp $IMAGE $DISK
+    if $RESIZE_DISK
+    then
+        echo "[$(date +%r)]----> Resizing the disk to $DISK_SIZE..."
+        qemu-img create -f qcow2 -o preallocation=metadata $DISK.new $DISK_SIZE >> ${VMNAME}.log 2>&1
+        virt-resize --quiet --expand /dev/sda1 $DISK $DISK.new >> ${VMNAME}.log 2>&1
+        mv $DISK.new $DISK
+    fi
+
+    # Create CD-ROM ISO with cloud-init config
+    echo "[$(date +%r)]----> Generating ISO for cloud-init..."
+    genisoimage -output $CI_ISO -volid cidata -joliet -r $USER_DATA $META_DATA &>> ${VMNAME}.log
+
+    echo "[$(date +%r)]----> Creating Storage Pool with the following command:"
+    echo "    virsh pool-create-as \\"
+    echo "      --name ${VMNAME} \\"
+    echo "      --type dir \\"
+    echo "      --target ${IMAGEDIR}/${VMNAME}"
+
+    # Create new storage pool for new VM
+    virsh pool-create-as --name ${VMNAME} --type dir --target ${IMAGEDIR}/${VMNAME}
+
+    # Add custom MAC Address if specified
+    if [ -z "${MACADDRESS}" ]
+    then
+        NETWORK_PARAMS="bridge=${BRIDGE},model=virtio"
+    else
+        NETWORK_PARAMS="bridge=${BRIDGE},model=virtio,mac=${MACADDRESS}"
+    fi
+
+    NETWORK_PARAMS_TWO="bridge=br0,model=virtio"
+
+    echo "[$(date +%r)]----> Installing the domain and adjusting the configuration..."
+    echo "[$(date +%r)]----> Installing with the following command:"
+    echo "    virt-install \\"
+    echo "      --import \\"
+    echo "      --name ${VMNAME} \\"
+    echo "      --memory ${MEMORY} \\"
+    echo "      --vcpus ${CPUS} \\"
+    echo "      --cpu ${FEATURE} \\"
+    echo "      --disk ${DISK},format=qcow2,bus=virtio \\"
+    echo "      --disk ${CI_ISO},device=cdrom \\"
+    echo "      --network ${NETWORK_PARAMS} \\"
+    echo "      --network ${NETWORK_PARAMS_TWO} \\"
+    echo "      --os-type=linux \\"
+    echo "      --os-variant=${OS_VARIANT} \\"
+    echo "      --graphics spice \\"
+    echo "      --noautoconsole "
+
+    # Call virt-install to import the cloud image and create a new VM
+    virt-install --import \
+        --name ${VMNAME} \
+        --memory ${MEMORY} \
+        --vcpus ${CPUS} \
+        --cpu ${FEATURE} \
+        --disk ${DISK},format=qcow2,bus=virtio \
+        --disk ${CI_ISO},device=cdrom \
+        --network ${NETWORK_PARAMS} \
+        --network ${NETWORK_PARAMS_TWO} \
+        --os-type=linux \
+        --os-variant=${OS_VARIANT} \
+        --graphics spice \
+        --noautoconsole
+
+    RET=$?
+    if [ "$RET" -ne 0 ]; then
+        echo "[ERROR] virt-install failed."
+        exit 3
+    fi
+    virsh dominfo ${VMNAME} >> ${VMNAME}.log 2>&1
+
+    # Eject cdrom
+    echo "[$(date +%r)]----> Cleaning up cloud-init..."
+    virsh change-media ${VMNAME} hda --eject --config >> ${VMNAME}.log
+
+    # Remove the unnecessary cloud init files
+    rm $USER_DATA $META_DATA $CI_ISO
+
+    echo "[$(date +%r)]----> Waiting for domain to get an IP address ..."
+    MAC=$(virsh dumpxml ${VMNAME} | awk -F\' '/mac address/ {print $2}' | sed -n 1p)
+    while true
+    do
+        IP=$(grep -B1 $MAC /var/lib/libvirt/dnsmasq/$BRIDGE.status | head \
+             -n 1 | awk '{print $2}' | sed -e s/\"//g -e s/,//)
+        if [ "$IP" = "" ]
+        then
+            sleep 1
+        else
+            break
+        fi
+    done
+
+    check_delete_known_host
+    echo "[$(date +%r)]----> SSH to ${VMNAME}: 'ssh ${LOGIN_USER}@${IP}' or 'ssh ${LOGIN_USER}@${VMNAME}'"
+    echo "[$(date +%r)]----> DONE."
+
+    popd
+}
+
+# Delete VM
+function remove ()
+{
+    if [ "$#" != 1 ]
+    then
+        printf "Too many arguments.\n"
+        printf "Run '$prog help remove' for usage.\n"
+        exit 1
+    else
+        # Check if domain exists and set DOMAIN_EXISTS variable.
+        domain_exists "${1}"
+
+        # Check if storage pool exists and set STORPOOL_EXISTS variable.
+        storpool_exists "${1}"
+
+        delete_vm "${1}"
+    fi
+}
+
+function set_defaults ()
+{
+    # Defaults are set here. Override using command line arguments.
+    CPUS=1                          # Number of virtual CPUs
+    FEATURE=host                    # Use host cpu features to the guest
+    MEMORY=1024                     # Amount of RAM in MB
+    DISK_SIZE=10                    # Disk Size in GB
+    DNSDOMAIN=example.local         # DNS domain
+    RESIZE_DISK=false               # Resize disk (boolean)
+    IMAGEDIR=${HOME}/virt/images    # Directory to store images
+    BRIDGE=virbr0                   # Hypervisor bridge
+    PUBKEY=${HOME}/.ssh/id_rsa.pub  # SSH public key
+    DISTRO=centos7                  # Distribution
+    MACADDRESS=                     # MAC Address
+    TIMEZONE=US/Eastern             # Timezone
+
+    # Reset OPTIND
+    OPTIND=1
+}
+
+function create ()
+{
+    # Set default variables
+    set_defaults
+
+    # Parse command line arguments
+    while getopts ":b:c:d:D:f:i:k:l:m:M:t:T:h:e:g:a:A:x" opt
+    do
+        case "$opt" in
+            b   ) BRIDGE="${OPTARG}" ;;
+            c   ) CPUS="${OPTARG}" ;;
+            d   )
+                if [ "${OPTARG}" -gt ${DISK_SIZE} ]; then
+                    DISK_SIZE="${OPTARG}G"
+                    RESIZE_DISK=true
+                else
+                    DISK_SIZE="${DISK_SIZE}G"
+                fi
+                ;;
+            D   ) DNSDOMAIN="${OPTARG}" ;;
+            f   ) FEATURE="${OPTARG}" ;;
+            i   ) IMAGE="${OPTARG}" ;;
+            k   ) PUBKEY="${OPTARG}" ;;
+            l   ) IMAGEDIR="${OPTARG}" ;;
+            m   ) MEMORY="${OPTARG}" ;;
+            M   ) MACADDRESS="${OPTARG}" ;;
+            t   ) DISTRO="${OPTARG}" ;;
+            T   ) TIMEZONE="${OPTARG}" ;;
+            e   ) EXTERNAL_IP="${OPTARG}" ;;
+            g   ) EXTERNAL_GATEWAY="${OPTARG}" ;;
+            a   ) NETWORK_MASK_SHORT="${OPTARG}" ;;
+            A   ) NETWORK_MASK="${OPTARG}" ;;
+            x   ) ;;
+            h|* ) usage; exit 1 ;;
+        esac
+    done
+
+    shift $((OPTIND - 1))
+
+    if [ "$#" != 1 ]
+    then
+        printf "Please specify a single host to create.\n"
+        printf "Run 'kvm-install-vm help create' for usage.\n"
+        exit 1
+    else
+        VMNAME=$1
+    fi
+
+    # Set cloud-init variables after VMNAME is assigned
+    USER_DATA=user-data
+    META_DATA=meta-data
+    CI_ISO=${VMNAME}-cidata.iso
+
+    # Check for ssh key
+    check_ssh_key
+
+    if [ ! -z "${IMAGE+x}" ]
+    then
+        echo "[$(date +%r)]----> Using custom QCOW2 image: ${IMAGE}."
+        OS_VARIANT="auto"
+        LOGIN_USER="<use the default account in your custom image>"
+    else
+        fetch_images
+    fi
+
+    # Check if domain already exists
+    domain_exists "${VMNAME}"
+
+    if [ "${DOMAIN_EXISTS}" -eq 1 ]; then
+        echo -n "[WARNING] ${VMNAME} already exists.  "
+        read -p "Do you want to overwrite ${VMNAME} [y/N]? " -r
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            remove ${VMNAME}
+        else
+            echo -e "\nNot overwriting ${VMNAME}. Exiting..."
+            exit 1
+        fi
+    fi
+
+    # Set network restart command
+    set_network_restart_cmd
+
+    # Set package manager
+    get_pkg_mgr
+
+    # Finally, create requested VM
+    create_vm
+}
+
+function attach-disk ()
+{
+    # Set default variables
+    FORMAT=qcow2
+
+    # Parse command line arguments
+    while getopts ":d:f:ps:t:h" opt
+    do
+        case "$opt" in
+            d   ) DISKSIZE="${OPTARG}G" ;;
+            f   ) FORMAT="${OPTARG}" ;;
+            p   ) PERSISTENT="${OPTARG}" ;;
+            s   ) SOURCE="${OPTARG}" ;;
+            t   ) TARGET="${OPTARG}" ;;
+            h|* ) usage; exit 1 ;;
+        esac
+    done
+
+    shift $((OPTIND - 1))
+
+    [ ! -z ${TARGET} ] || die "You must specify a target device, for e.g. '-t vdb'"
+    [ ! -z ${DISKSIZE} ] || die "You must specify a size (in GB) for the new device, for e.g. '-d 5'"
+
+    if [ "$#" != 1 ]
+    then
+        printf "Please specify a single host to attach a disk to.\n"
+        printf "Run 'kvm-install-vm help attach-disk' for usage.\n"
+        exit 1
+    else
+        # Set variables
+        VMNAME=$1
+        DISKDIR=${HOME}/virt/images/${VMNAME}    # Directory to create attached disk
+        DISKNAME=${VMNAME}-${TARGET}-${DISKSIZE}.${FORMAT}
+
+        if [ ! -f "${DISKDIR}/${DISKNAME}" ]
+        then
+            echo "[$(date +%r)]----> Creating new '${TARGET}' disk image for domain ${VMNAME}."
+            qemu-img create -f ${FORMAT} -o size=$DISKSIZE,preallocation=metadata \
+                ${DISKDIR}/${DISKNAME} >> ${DISKDIR}/${VMNAME}.log  && \
+
+            echo "[$(date +%r)]----> Attaching ${DISKNAME} to domain ${VMNAME}." && \
+            virsh attach-disk ${VMNAME} \
+                --source $DISKDIR/${DISKNAME} \
+                --target ${TARGET} \
+                --subdriver ${FORMAT} \
+                --cache none \
+                --persistent >> ${DISKDIR}/${VMNAME}.log && \
+
+            exit "$?"
+        else
+            printf "Target ${TARGET} is already created or in use.\n"
+            exit 1
+        fi
+
+    fi
+
+}
+
+#--------------------------------------------------
+# Main
+#--------------------------------------------------
+
+subcommand="${1:-none}"
+[[ "${subcommand}" != "none" ]] && shift
+
+case "${subcommand}" in
+    none)
+        usage
+        exit 1
+        ;;
+    help)
+        if [[ "${1:-none}" == "none" ]]; then
+            usage
+        elif [[ "$1" =~ ^create$|^remove$|^list$|^attach-disk$ ]]; then
+            usage_subcommand "$1"
+        else
+            printf "'$1' is not a valid subcommand.\n\n"
+            usage
+            exit 1
+        fi
+        exit 0
+        ;;
+    list)
+        virsh list --all
+        exit 0
+        ;;
+    create|remove|attach-disk|remove-disk)
+        if [[ "${1:-none}" == "none" ]]; then
+            usage_subcommand "${subcommand}"
+            exit 1
+        elif [[ "$1" =~ ^help$ ]]; then
+            usage_subcommand "${subcommand}"
+            exit 1
+        else
+            "${subcommand}" "$@"
+            exit $?
+        fi
+        ;;
+    *)
+        printf "'${subcommand}' is not a valid subcommand.\n"
+        usage
+        exit 1
+        ;;
+esac
